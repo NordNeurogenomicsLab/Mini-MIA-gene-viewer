@@ -1,0 +1,104 @@
+---
+title: "Mini MIA gene viewer"
+subtitle: |
+  [Canales et al. 2020 (under review): A temporal map of maternal immune activation-induced changes \n reveals a shift in neurodevelopmentiming and perturbed cortical development in mice](https://www.biorxiv.org/content/10.1101/2020.06.13.150359v1)
+author: Data analysis by Karol Cichewicz and Alexander Nord
+output: html_document
+css: style.css
+resource_files:
+   - rpkm_linear_meta.csv
+   - Combined_DE_table.csv
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(message=FALSE, 
+                      warning = FALSE, 
+                      error=FALSE, 
+                      echo=FALSE
+                      )
+library("DT")
+library("dplyr")
+library("ggplot2")
+library("shiny")
+library("rmarkdown")
+#library("RColorBrewer")
+library("data.table")
+library("Cairo")
+
+options(shiny.usecairo=TRUE)
+
+#setwd("C:/Users/Karol/Desktop/MIA_mini_ShinyApp")
+rpkm_linear_meta <- fread("rpkm_linear_meta.csv")
+rpkm_linear_meta$V1 <- NULL
+rpkm_linear_meta$DPC <- as.factor(rpkm_linear_meta$DPC)
+
+```
+
+```{r user_select_city}
+selectInput("mygene", "Choose or type a gene to plot:", choices = c(sort(unique(rpkm_linear_meta$gene_name))), multiple = FALSE, selectize = 16000,  selected = "Sox9")
+```
+
+```{r}
+
+#j_brew_colors <- brewer.pal(n = 8, name = "Paired")[c(6,2)]
+
+j_brew_colors <- c("#E31A1C", "#1F78B4")
+
+mydata <- reactive({
+  filter(rpkm_linear_meta, gene_name == input$mygene)
+})
+
+renderPlot(width = 700, height = 400, {
+  
+ggplot(mydata(), aes(x = DPC, y= RPKM, colour=Condition))+
+  geom_smooth(formula = y ~ x, method = "loess", se=T, aes(fill=Condition,  group=Condition), size  = 0.7, alpha=0)+
+  geom_boxplot(alpha=0, width = 0.5, position="identity", size = 0.2, aes(fill=Condition,  group=ExperimentalDesign))+
+  geom_jitter(size=4, width = 0.25, alpha = 0.5, aes(shape = Sex))+
+  theme_bw()+
+  labs(title= input$mygene, x="")+
+  scale_color_manual(values = j_brew_colors)+
+  scale_x_discrete(breaks =c("12.5", "14.5", "17.5", "19.5"), labels = c("E12.5", "E14.5", "E17.5", "P0"))+
+  theme(plot.title = element_text(size = rel(2), hjust=0.5),
+        axis.text.x=element_text(angle=50, vjust=0.9, hjust=1, size=14),
+        axis.text.y=element_text(size=12),
+        axis.title.y=element_text(size=14),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.position = "right",
+        legend.title = element_text(size = 14),
+        legend.text = element_text(size = 12))
+})
+
+```
+
+## Differential expression analysis table
+
+```{r}
+
+df <- fread("Combined_DE_table.csv")
+df$V1 <- NULL
+
+renderDT({
+  if(input$mygene %in% df$gene_name){
+    
+  df2 <- dplyr::filter(df, gene_name == input$mygene)[,c(7,1:6)]
+  df2 <- data.frame(df2[,1:2], round(as.matrix(df2[,3:7]), 5))
+  df2$Significant <- ifelse(df2$FDR < 0.05, TRUE, FALSE)    
+  df2$Significant <- as.character(df2$Significant)    
+  
+DT::datatable(df2, rownames = FALSE, options = list(dom = 't'), filter = list(position = "none"))
+  } else {
+  
+shiny::showNotification("Gene expression too low to perform differential expression analysis.", type = "error", duration = NULL)
+  
+    NULL
+  
+    }
+
+})
+
+```
+
+<h5>Columns indicate gene symbols (gene_name), log2 fold change (LogFC), log2 counts per million (LogCPM), likelihood ratio statistic (LR), P value (PValue), false discovery rate adjusted P value (FDR), Significant indicates FDR < 0.05 </h5>
